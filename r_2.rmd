@@ -1,0 +1,396 @@
+---
+title: "R: Data analysis and (a tiny bit of) stats"
+output: html_notebook
+---
+
+## Intro
+This is the second course in a two-course introduction to R, an open-source statistics language. 
+
+We will dive a little deeper into the power of R for data analysis and statistics. We'll go beyond the basics and use some functions and strategies that will turbocharge your data analysis project. 
+
+## What we'll learn
+
+In the first course you learned to:
+* Work with R, R Studio and an R Markdown notebook to analyze data.
+* Load packages, including the `tidyverse` for general data analysis and `tidycensus` for loading census data.
+* Loading data into R studio from a csv and from the tidycensus package.
+* Use common functions to work with data, including:
+  * Using filter() to create a subset of data.
+  * Using arrange() to order data.
+  * Using group_by() and summarize() to create aggregate statistics. 
+  * Using ggplot() to visualize data. 
+
+We're going to introduce a few new techniques:
+* Use mutate() to create a new column based on another column. 
+* Use round() to make some unwiedly numbers a little prettier.
+* Use if_else() to make a new column based on a true/false condition.
+* A VERY gentle introduction to two statistical concepts that come up in journalistic data analysis: correlation and t-tests.
+
+## Load libraries
+
+We'll load the `tidyverse` family of packages for this course.
+
+```{r}
+library(tidyverse)
+```
+
+## Load data
+
+As in the last class, we're going to be working with statistical information about Denver area census tracts. 
+
+Census tracts are geographical units -- neighborhoods, basically -- that range range in size from few 100 to more than 10,000 people. The average tract in the Denver area in 2020 had about 4,000 people. 
+
+The code below reads in a csv -- a spreadsheet -- that contains information about each census tract in six metropolitan Denver counties. For each tract, we know the total population, the white population, the Hispanic population and the median household income. 
+
+```{r}
+
+denver_tract_statistics <- read_csv("data/denver_tract_statistics.csv") 
+  
+head(denver_tract_statistics)
+
+```
+
+## Motivating Question
+
+The "motivating question" that will guide our analysis for this exercise is this: "do neighborhoods in Denver with larger Hispanic populations have lower incomes than neighborhoods with smaller Hispanic populations?"
+
+We'll use two different statistical analysis approaches to answer that question. 
+
+When we're done, I'll ask you to use these techniques to answer a related question on your own: "do neighborhoods in Denver with larger white populations have higher incomes than neighborhoods with smaller white populations?" 
+
+## Preparing data for analysis
+
+We need to do a bit of preparation to answer our question, which will involve transforming our data.  
+
+First, let's use a new function, `mutate()`, to create a new column based on an existing column. 
+
+In the code below, we store the dataframe with the same name while making changes to it. That means we're simply overwriting and updating the data we originally loaded.  
+
+Let's create a new column called `pct_hispanic` that calculates the percentage of the population that is Hispanic in each tract. 
+
+```{r}
+
+denver_tract_statistics <- denver_tract_statistics %>%
+  mutate(pct_hispanic = hispanic/total)
+
+denver_tract_statistics
+
+```
+
+The number in the column is correct, but it's not really pleasing to the eye.  Let's do it over again, but this time let's multiply the total by 100 to get a nicer looking percentage.
+
+```{r}
+
+denver_tract_statistics <- denver_tract_statistics %>%
+  mutate(pct_hispanic = hispanic/total*100)
+
+denver_tract_statistics
+
+```
+
+We can make it prettier.  That's a lot of numbers after the decimal.This time, let's round it to two decimal places, using a new function `round()`. The number `2` after the comma indicates rounding to two decimal places.
+
+```{r}
+
+denver_tract_statistics <- denver_tract_statistics %>%
+  mutate(pct_hispanic = round(hispanic/total*100,2))
+
+denver_tract_statistics
+
+```
+
+Now let's get a sense of the range of the Hispanic population in neighborhoods across the city.  
+
+We can use `arrange()` for that. We'll sort one dataframe from lowest to highest, and the other highest to lowest using `desc()`.
+
+The lowest tract has a Hispanic population of less than two percent. The highest has 82 percent. 
+
+```{r}
+denver_tract_statistics %>%
+  arrange(pct_hispanic)
+
+denver_tract_statistics %>%
+  arrange(desc(pct_hispanic))
+```
+
+Finally, we're going to create a new column to indicate whether a given tract has a population that is "majority Hispanic" or not. We'll combine `mutate` with a function called `if_else()`.
+
+The code below says: "let's make a new column called hispanic_status.  To do this, look in the pct_hispanic column. If the value is greater than 50 percent, then stick 'majority_hispanic' in this new column we're making.  If it's not, then put 'not_majority_hispanic' in the new column."
+
+There are 76 majority Hispanic neighborhoods. The rest are not maority Hispanic. 
+
+```{r}
+
+denver_tract_statistics <- denver_tract_statistics %>%
+  mutate(pct_hispanic = round(hispanic/total*100,2)) %>%
+  mutate(hispanic_status = if_else(pct_hispanic > 50, "majority_hispanic","not_majority_hispanic")) %>%
+  arrange(hispanic_status)
+
+denver_tract_statistics
+
+```
+
+## Answering questions with correlations
+
+Our goal is to figure out whether Hispanic neighborhoods have lower incomes than non-Hispanic neighborhoods in Denver. 
+
+There are lots of ways we could answer this question. We will need to translate our general question into a more specific question, something R will understand.   
+
+Here's one specific question: "Looking at a group of neighborhoods, as the percentage of the population that is Hispanic increases, do we see a corresponding decline in median household income?" 
+
+We're asking whether there's a relationship -- or correlation -- between income and Hispanic population in Denver. As one goes up, does the other go down? (Note: we're not asking whether one causes the other).
+
+Plotting our data can reveal a lot. This code uses the `ggplot()` package to produce a "scatterplot". Each dot is a neighborhood.  It's position on the graph is determined by two factors -- its percentage hispanic (x axis) and its median household income (y axis).
+
+```{r}
+
+denver_tract_statistics %>%
+  ggplot() +
+  geom_point(aes(x=pct_hispanic,y=median_household_income)) 
+
+
+```
+
+I'd read this as, generally speaking, neighborhoods with lower Hispanic populations have higher incomes, and vice versa.  
+
+To help see this more clearly, we can draw a trend line -- called the "line of best fit" -- through the data using `geom_smooth()`.
+
+```{r}
+
+denver_tract_statistics %>%
+  ggplot() +
+  geom_point(aes(x=pct_hispanic,y=median_household_income)) + 
+  geom_smooth(aes(x=pct_hispanic, y=median_household_income, method="lm"))    
+
+
+
+```
+
+There's a big drop off in income levels as the Hispanic population increases from 0 to 20 percent, and a slower decline after that. 
+
+We can do more than just look at a graph. We can calculate a statistical measure of relationship, called the "correlation coefficient" or "R" by using the `cor.test()` function.
+
+This gets a little stats nerdy, so hold on to your hats. 
+
+(The dollar sign operator allows us to target certain columns in our dataframe).
+
+```{r}
+cor.test(denver_tract_statistics$median_household_income,denver_tract_statistics$pct_hispanic)
+```
+
+This output is a lot to take in, but I want you to breathe. And then focus on two numbers and ignore everything else. 
+
+* p-value < 2.2e-16, which is fancy scientific notation for the very, very small number 0.00000000000000022.
+* cor -0.57.  
+
+### About p-values
+The p-value is a measure of statistical significance. Used with other stats, it provides some insight into how much stock to put in our results, whether they're a statistical fluke, or likely represent something true about the world. By itself, it's not a measure of when you've found something important.  It's just a sniff test, a signal. Smaller is better. You may have heard a benchmark of "P < .05" for many fields, but the target level is of great debate. By most standards, our p-value is very low here. Which is good. But we'd never use this in a story for a general audience. It's just a signal for us.
+
+For a good explainer on p values: https://www.vox.com/science-and-health/2017/7/31/16021654/p-values-statistical-significance-redefine-0005. 
+
+### About correlation coefficients
+
+That second number is -.57, the "correlation coefficient", also called r.  It indicates a moderate negative relationship between percent Hispanic and median household income.  As the percentage of the population that is Hispanic increases, we see a decline in median household income.
+
+A quick note about r values. R is always a number between -1 and 1.  
+
+An r of 1 indicates a perfect positive relationship.  An r of 0 indicates no relationship. And an r of -1 indicates a perfect negative relationship.
+
+Some examples:
+
+* The heat index vs the amount the average person working outdoors on that day will sweat. The relationship between these two things is positively correlated. We'd expect an r value close to 1.  
+* The heat index vs the amount of hand warmer packets sold by a convenience store.  The relationship between these things are negatively correlated. We'd expect an r value close to -1. 
+* The heat index vs the number of peanut butter brands on sale at a local grocery store on that day. The number of brands of peanut butter on a store shelf probably doesn't change that much. We'd expect no relationship between those things, and an r value close to 0. 
+
+We'd never use an r value in a story though, it's simply too wonky for most readers.  So what can we use in a story?
+
+For that, we'll build a simple linear model, using the `lm()` function and look at the results.  
+
+```{r}
+
+income_vs_hispanic_coefficients <- lm(denver_tract_statistics$median_household_income ~ denver_tract_statistics$pct_hispanic) %>%
+  coefficients()
+
+
+income_vs_hispanic_coefficients
+
+
+```
+
+Ignore the "Intercept" number. What matters here is the other number 1176.496. 
+
+Here's how to interpret that: for every 1 percent increase in the Hispanic population in a given neighborhood, there's a $1,176.50 decrease in median household income. 
+
+In a story, we might write a paragraph like, "In Denver, neighborhoods with larger Hispanic populations generally have lower levels of income. For every 10 percent increase in the Hispanic population in metro Denver neighborhoods, there was an $11,765 decrease in median household income, an analysis of U.S. Census data shows."
+
+### Answering questions with averages
+
+Remember our initial question:"Do neighborhoods in Denver with larger Hispanic populations have lower incomes than neighborhoods with smaller Hispanic populations?"
+
+Let's take another approach to answering this with another specific question: "Do majority Hispanic neighborhoods in Denver have lower average incomes than non-majority Hispanic neighborhoods?" 
+
+We could use grouping and summarizing techniques we learned in the previous class. 
+
+```{r}
+
+denver_tract_statistics %>%
+  group_by(hispanic_status) %>%
+  summarise(median_household_income = mean(median_household_income),
+            count_of_neighborhoods = n())
+
+```
+We see here that the in the 76 majority Hispanic neighborhoods in Denver, the average household income is $56,000, a little more than half of non_majority Hispanic neighborhoods.  This is a pretty big difference, more than 38,000 dollars! 
+
+Is what we're seeing here real, or an aberration? 
+
+A t-test can help us answer that question.  
+
+It's a statistical analysis method that can tell us where there's a statistically significant difference between the means of two groups in a sample.
+
+Have we found a real difference, or have we chanced upon a statistical aberration? Let's use the `t.test()` function to find out.
+
+
+```{r}
+
+t.test(median_household_income ~ hispanic_status, data=denver_tract_statistics)
+
+```
+
+Okay, this is a lot, so, again, breathe.  Let's focus on a few key numbers here. 
+
+* p-value < 2.2e-16 0.00000000000000022. This is quite small, suggesting our results aren't a statistical aberration. 
+* sample estimates of 56,359.32 (majority_hispanic) and 94,674.54 (not_majority_hispanic)
+* 95 percent confidence interval: -42329.02 and -34.301.43.
+
+The sample estimates are the average income for the two neighborhood groups in our sample.  We got the same numbers as above. The difference between these two numbers is 38,315.
+
+The 95 percent confidence intervals suggest that there's a very high probability that the actual difference will fall somewhere between 42,329 and 34,301. 38K is the midpoint between those two ranges.
+
+## On your own
+
+Now it's your turn.  Using what you've learned here, do some analysis to answer this question: "do neighborhoods in Denver with larger white populations have higher incomes than neighborhoods with smaller white populations?" Write a few sentences and we'll discuss.
+
+```{r}
+
+
+```
+
+If you want to cheat and just get the results, scroll all the way down.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+You sure?
+```{r}
+
+
+```
+
+Okay, keep scrolling
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+
+###
+# Load data and transform
+###
+
+denver_tract_statistics_white <- read_csv("data/denver_tract_statistics.csv") %>%
+  mutate(pct_white = round(white/total*100,2)) %>%
+  mutate(white_status = if_else(pct_white > 50, "majority_white","not_majority_white")) %>%
+  arrange(white_status) 
+
+
+###
+# Plot pct_white vs median_household income
+###
+
+# plot suggests positive correlation, income increases more sharply when white percentage gets over 75 percent.
+denver_tract_statistics_white %>%
+  ggplot() +
+  geom_point(aes(x=pct_white,y=median_household_income)) + 
+  geom_smooth(aes(x=pct_white, y=median_household_income, method="lm"))    
+
+###
+# Calculate correlation coefficient
+###
+
+# P value of < 2.2e-16, very very small
+# Moderate positive correlation of .59; as white population increases, so does income
+cor.test(denver_tract_statistics_white$median_household_income,denver_tract_statistics_white$pct_white)
+
+
+###
+# Calculate increase in income
+###
+
+# For every 1 percent increase in the white population, a $1,051 inrease in median household income
+income_vs_white_coefficients <- lm(denver_tract_statistics_white$median_household_income ~ denver_tract_statistics_white$pct_white) %>%
+  coefficients()
+
+income_vs_white_coefficients
+
+###
+# Calculate averages between majority and non-majority
+###
+
+# Majority white neighborhoods have average median household income of $100K, compared with $61K for not majority white. Difference of nearly 40K.
+denver_tract_statistics_white %>%
+  group_by(white_status) %>%
+  summarise(median_household_income = mean(median_household_income),
+            count_of_neighborhoods = n())
+
+###
+# Calculate t-test
+###
+# Very small p value of 2.2e-16, which is good.
+# Means in our two samples are same as before. Difference of nearly 40K.
+# High probability that actual difference is between 35K and 43K in larger population.
+t.test(median_household_income ~ white_status, data=denver_tract_statistics_white)
+
+###
+# Sentences
+###
+
+# In Denver, neighborhoods with larger white populations generally have higher levels of income. For every 10 percent increase in the white population in metro Denver neighborhoods, there was an $10,514 decrease in median household income, an analysis of U.S. Census data shows. Majority white neighborhoods had an average income of $100,000, nearly double non-majority-white neighborhoods."
+```
+
+
+
